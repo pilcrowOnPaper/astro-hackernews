@@ -1,0 +1,123 @@
+---
+import Layout from "../lib/Layout.astro";
+import { formatSecondsSince } from "../lib/format";
+import type { Post, Comment } from "../lib/hacker-news";
+
+const postId = Astro.params.postId ?? "";
+const postResponse = await fetch(
+	`https://hacker-news.firebaseio.com/v0/item/${postId}.json`
+);
+const post = (await postResponse.json()) as null | Post;
+if (!post)
+	return new Response(null, {
+		status: 404,
+		statusText: "Not found",
+	});
+const commentIds = post.kids ?? [];
+const getComments = async (commentIds: number[]): Promise<Comment[]> => {
+	if (commentIds.length < 1) return [];
+	const comments = await Promise.all(
+		commentIds.map(async (commentId) => {
+			const response = await fetch(
+				`https://hacker-news.firebaseio.com/v0/item/${commentId}.json`
+			);
+			return response.json() as Promise<Comment>;
+		})
+	);
+	const childCommentIds = comments
+		.map((val) => val.kids ?? [])
+		.reduce((currArr, val) => [...currArr, ...val], [] as number[]);
+	const childComments = await getComments(childCommentIds);
+	return [...comments, ...childComments].filter(
+		(val) => !!val.text && val.text !== "[dead]"
+	);
+};
+const allComments = await getComments(commentIds);
+
+type CommentTreeItem = Comment & {
+	comments: CommentTreeItem[];
+};
+
+const createCommentTree = () => {
+	const result: CommentTreeItem[] = allComments
+		.filter((val) => val.parent === post.id)
+		.map((val) => {
+			return {
+				...val,
+				comments: [],
+			};
+		});
+	const getCommentTreeItem = (
+		targetCommentIds: number[]
+	): CommentTreeItem[] => {
+		return targetCommentIds
+			.map((targetComment) =>
+				allComments.find((comment) => comment.id === targetComment)
+			)
+			.filter((item): item is Comment => !!item)
+			.map((comment) => {
+				return {
+					...comment,
+					comments: getCommentTreeItem(comment.kids ?? []),
+				};
+			});
+	};
+	return result.map((comment) => {
+		return {
+			...comment,
+			comments: getCommentTreeItem(comment.kids ?? []),
+		};
+	});
+};
+
+const commentTree = createCommentTree();
+---
+
+<Layout>
+	<div>
+		<h1>
+			<a
+				href={post.url ?? ""}
+				class="text-blue-600 hover:underline text-xl font-medium"
+				>{post.title}</a
+			>
+		</h1>
+
+		{
+			post.url && (
+				<p class="text-xs text-gray-500">{new URL(post.url).origin}</p>
+			)
+		}
+		<div class="flex text-sm text-gray-700 gap-x-4 mt-1">
+			<p>{post.score} points</p>
+			<p>by {post.by}</p>
+			<p>{formatSecondsSince(post.time)} ago</p>
+		</div>
+	</div>
+	<p class="text-sm text-gray-700">
+		{post.kids?.length ?? 0} comments
+	</p>
+	<section class="grid grid-cols-1 gap-y-6 text-sm my-6">
+		{
+			commentTree.map((item) => {
+				const Comment = (comment: CommentTreeItem, depth = 0) => {
+					return (
+						<div>
+							<div class="flex gap-x-2">
+								<p class="font-semibold">{comment.by}</p>
+								<p class="text-gray-500">
+									{formatSecondsSince(comment.time)} ago
+								</p>
+							</div>
+							<p set:html={comment.text} class="mt-1" />
+							<div class="ml-6 mt-3">
+								{comment.comments.map((val) => Comment(val, depth + 1))}
+							</div>
+						</div>
+					);
+				};
+				return Comment(item);
+			})
+		}
+	</section>
+</Layout>

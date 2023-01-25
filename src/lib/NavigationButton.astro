@@ -1,0 +1,21 @@
+---
+interface Props {
+	href: string;
+	isSelected?: boolean;
+}
+
+const isSelected = Astro.props.isSelected ?? false;
+---
+
+<a
+	href={Astro.props.href}
+	class:list={[
+		"py-1.5 px-2 rounded tabular-nums border  cursor-pointer",
+		{
+			"bg-blue-600 text-white border-blue-600": isSelected,
+			"hover:border-gray-300 border-transparent": !isSelected,
+		},
+	]}
+>
+	<slot />
+</a>

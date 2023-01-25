@@ -1,0 +1,212 @@
+---
+import Layout from "../lib/Layout.astro";
+import NavigationButton from "../lib/NavigationButton.astro";
+import { formatSecondsSince } from "../lib/format";
+import type { Post } from "../lib/hacker-news";
+
+const sortParams = Astro.url.searchParams.get("sort");
+const sort = sortParams === "top" || sortParams === "new" ? sortParams : "top";
+
+const getPostIdFetchUrl = () => {
+	if (sort === "top")
+		return "https://hacker-news.firebaseio.com/v0/topstories.json";
+	return "https://hacker-news.firebaseio.com/v0/newstories.json";
+};
+
+const allPostIdsResponse = await fetch(getPostIdFetchUrl());
+const allPostIds = (await allPostIdsResponse.json()) as number[];
+
+const pageParam = Astro.url.searchParams.get("page") ?? "1";
+const pageNumber = isNaN(Number(pageParam)) ? 1 : Number(pageParam);
+const MAX_POST_COUNT = 30;
+const maxPageCount = Math.ceil(allPostIds.length / MAX_POST_COUNT);
+const targetPosts = allPostIds.slice(
+	(pageNumber - 1) * MAX_POST_COUNT,
+	pageNumber * MAX_POST_COUNT
+);
+const posts = await Promise.all(
+	targetPosts.map(async (postId) => {
+		const postResponse = await fetch(
+			`https://hacker-news.firebaseio.com/v0/item/${postId}.json`
+		);
+		return postResponse.json() as Promise<Post>;
+	})
+);
+const getPageUrl = (targetPageNumber: number) => {
+	const newUrl = new URL(Astro.url);
+	newUrl.searchParams.set("page", targetPageNumber.toString());
+	return newUrl.href;
+};
+const getSortUrl = (value: "new" | "top") => {
+	const newUrl = new URL(Astro.url);
+	newUrl.searchParams.delete("page");
+	newUrl.searchParams.set("sort", value);
+	return newUrl.href;
+};
+
+const capitalizeFirstLetter = (string: string) => {
+	return string.charAt(0).toUpperCase() + string.slice(1);
+};
+
+type NavigationItem =
+	| {
+			type: "count";
+			value: number;
+	  }
+	| {
+			type: "skip";
+	  };
+const nextPagesCount =
+	pageNumber + 4 === maxPageCount ? 4 : Math.min(maxPageCount - pageNumber, 3);
+const prevPagesCount = pageNumber - 4 === 1 ? 4 : Math.min(pageNumber - 1, 3);
+let navItems: NavigationItem[] = Array(nextPagesCount + prevPagesCount + 1)
+	.fill(pageNumber - prevPagesCount)
+	.map((val, i) => val + i)
+	.map((val) => {
+		return {
+			type: "count",
+			value: val,
+		} satisfies NavigationItem;
+	});
+if (navItems[0].type === "count" && navItems[0].value !== 1) {
+	navItems = [
+		{
+			type: "count",
+			value: 1,
+		},
+		{
+			type: "skip",
+		},
+		...navItems,
+	];
+}
+const lastItem = navItems.at(-1);
+if (lastItem?.type === "count" && lastItem?.value !== maxPageCount) {
+	navItems = [
+		...navItems,
+		{
+			type: "skip",
+		},
+		{
+			type: "count",
+			value: maxPageCount,
+		},
+	];
+}
+---
+
+<Layout>
+	<div class="my-2 flex place-items-center gap-x-4">
+		<details class="text-sm">
+			<summary
+				class="rounded border border-gray-300 w-fit px-4 hover:bg-gray-100 cursor-pointer py-1"
+				>Sort by: <span class="font-semibold"
+					>{capitalizeFirstLetter(sort)}</span
+				></summary
+			>
+			<div
+				class="border border-gray-300 shadow rounded absolute bg-white divide-y mt-1"
+			>
+				<p class="text-sm font-medium py-1 px-4 whitespace-nowrap">
+					Sort options
+				</p>
+				<ul class="divide-y rounded">
+					{
+						(["top", "new"] as const).map((sortOption, i, arr) => {
+							return (
+								<li>
+									<a
+										href={getSortUrl(sortOption)}
+										class:list={[
+											"py-1 hover:bg-blue-600 hover:text-white cursor-pointer pl-4 block",
+											{
+												"rounded-b": i === arr.length - 1,
+											},
+										]}
+									>
+										{capitalizeFirstLetter(sortOption)}
+									</a>
+								</li>
+							);
+						})
+					}
+				</ul>
+			</div>
+		</details>
+		<p class="text-gray-700 text-sm">
+			Page {pageNumber} of {maxPageCount}
+		</p>
+	</div>
+	<section class="grid grid-cols-1 gap-y-4 mt-6">
+		{
+			posts.map((post, i) => {
+				const postCount = MAX_POST_COUNT * (pageNumber - 1) + i + 1;
+				const commentPageUrl = `/${post.id}`;
+				return (
+					<article class="">
+						<div class="flex">
+							<h1>
+								<a
+									href={post.url ?? commentPageUrl}
+									class="text-lg text-blue-600 hover:underline"
+								>
+									{post.title}{" "}
+								</a>
+							</h1>
+						</div>
+						{post.url && (
+							<p class="text-xs text-gray-500 -mt-0.5">
+								#{postCount} - {new URL(post.url).origin}
+							</p>
+						)}
+						<div class="flex text-sm text-gray-700 gap-x-4 mt-0.5">
+							<p>{post.score} points</p>
+							<a href={commentPageUrl} class="hover:underline">
+								{post.kids?.length ?? 0} comments
+							</a>
+							<p>by {post.by}</p>
+							<p>{formatSecondsSince(post.time)} ago</p>
+						</div>
+					</article>
+				);
+			})
+		}
+	</section>
+	<div class="flex gap-x-2 mb-4 mt-8 text-sm place-items-center">
+		{
+			pageNumber > 1 && (
+				<NavigationButton href={getPageUrl(pageNumber - 1)}>
+					Previous
+				</NavigationButton>
+			)
+		}
+		{
+			navItems.map((item) => {
+				if (item.type === "count") {
+					return (
+						<NavigationButton
+							href={getPageUrl(item.value)}
+							isSelected={item.value === pageNumber}
+						>
+							{item.value}
+						</NavigationButton>
+					);
+				}
+				return <p class="py-0.5 px-2">...</p>;
+			})
+		}
+		{
+			pageNumber < maxPageCount && (
+				<NavigationButton href={getPageUrl(pageNumber + 1)}>
+					Next
+				</NavigationButton>
+			)
+		}
+	</div>
+</Layout>
+
+<style>
+	details summary::-webkit-details-marker {
+		display: none;
+	}
+</style>

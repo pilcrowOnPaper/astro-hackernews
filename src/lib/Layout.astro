@@ -1,0 +1,31 @@
+---
+interface Props {
+	title?: string;
+}
+const title = Astro.props.title ?? "Astro HackerNews";
+---
+
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<meta name="viewport" content="width=device-width" />
+		<meta name="generator" content={Astro.generator} />
+		<title>{title}</title>
+	</head>
+	<body class="px-4 sm:px-8 md:px-16">
+		<header class="pb-2 pt-6 flex flex-col">
+			<a href="/" class="font-semibold text">Astro HackerNews</a>
+		</header>
+		<main class="py-4">
+			<slot />
+		</main>
+		<footer class="pt-4 pb-12 flex place-content-center">
+			<a href="/" class="-mt-1 text-sm text-gray-700 hover:underline"
+				>Github Repository</a
+			>
+		</footer>
+	</body>
+</html>
+
+
